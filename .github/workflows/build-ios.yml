@@ -26,6 +26,13 @@ jobs:
           cd mobile
           npm ci
 
+      - name: Configure Node for Xcode Script Phases
+        run: |
+          # Ensure Xcode script phases use the exact Node binary from runner
+          NODE_PATH=$(which node)
+          echo "export NODE_BINARY=$NODE_PATH" > mobile/ios/.xcode.env.local
+          echo "Configured .xcode.env.local with NODE_BINARY=$NODE_PATH"
+
       - name: Setup CocoaPods
         run: |
           cd mobile/ios
@@ -34,6 +41,9 @@ jobs:
       - name: Build Unsigned IPA for Sideloading
         run: |
           cd mobile/ios
+          set -o pipefail
+          
+          # Compile workspace without code signing
           xcodebuild \
             -workspace CarUnlock.xcworkspace \
             -scheme CarUnlock \
@@ -43,8 +53,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            CODE_SIGNING_INJECT_BASE_ENTITLEMENTS=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee xcodebuild.log
 
+          # Package into standard .ipa structure
           mkdir -p Payload
           cp -r build/Build/Products/Release-iphoneos/CarUnlock.app Payload/
           zip -r CarUnlock.ipa Payload
