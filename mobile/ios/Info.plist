@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>es</string>
+	<key>CFBundleDisplayName</key>
+	<string>CarLock</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- ================================================================= -->
+	<!-- BACKGROUND EXECUTION MODES (CRITICAL FOR LOCKED SCREEN OPERATION) -->
+	<!-- ================================================================= -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- Required for CLBeaconRegion wake-up on walk-up & walk-away with screen off -->
+		<string>location</string>
+		<!-- Required for CBCentralManager background scanning, connection and state restoration -->
+		<string>bluetooth-central</string>
+	</array>
+
+	<!-- ================================================================= -->
+	<!-- PERMISSION DESCRIPTIONS (REQUIRED FOR APPLE APP STORE REVIEW) -->
+	<!-- ================================================================= -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>CarLock requiere acceso a la ubicación en segundo plano permanente para detectar la baliza iBeacon de tu vehículo, desbloqueándolo automáticamente al acercarte y bloqueándolo al alejarte, con la pantalla apagada.</string>
+
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CarLock utiliza tu ubicación para determinar la proximidad inmediata con el vehículo y calibrar el rango de activación.</string>
+
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Permite la automatización completa de apertura y cierre por proximidad sin necesidad de desbloquear manualmente el teléfono.</string>
+
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CarLock necesita acceso continuo a Bluetooth en segundo plano para autenticarte mediante intercambio criptográfico seguro (HMAC-SHA256) con el vehículo.</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Utilizado para comunicarse con el hardware de control de acceso BLE del vehículo.</string>
+
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+		<string>bluetooth-le</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+</dict>
+</plist>
