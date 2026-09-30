@@ -36,9 +36,11 @@ export interface ProximitySettings extends StatusChangeEvent {
 
 const { CarLockBridge } = NativeModules;
 
+export const isNativeAvailable = !!CarLockBridge;
+
 if (Platform.OS === 'ios' && !CarLockBridge) {
   console.warn(
-    '[CarLockNative] CarLockBridge is not linked. Make sure CarLockBridge.swift and CarLockBridge.m are added to your Xcode target.'
+    '[CarLockNative] CarLockBridge is not linked. Running in Expo Go / Preview mode.'
   );
 }
 
@@ -81,7 +83,7 @@ export const CarLockNative = {
         beaconUUID: 'e2c56db5-dffb-48d2-b060-d0f5a71096e0',
         major: 1,
         minor: 1,
-        authorizationStatus: 'authorizedWhenInUse',
+        authorizationStatus: 'authorizedAlways',
         bluetoothState: 'poweredOn',
         isLocked: true,
       };

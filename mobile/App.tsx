@@ -17,6 +17,7 @@ import {
   LockStateChangeEvent,
   LogUpdateEvent,
   StatusChangeEvent,
+  isNativeAvailable,
 } from './src/native/CarLockNative';
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
   const [bluetoothState, setBluetoothState] = useState<string>('unknown');
   const [rssiThreshold, setRssiThreshold] = useState<number>(-65);
   const [currentRssi, setCurrentRssi] = useState<number>(-100);
+  const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
 
   // Manual Operation Loading
   const [activeAction, setActiveAction] = useState<'unlock' | 'lock' | null>(null);
@@ -143,7 +145,33 @@ export default function App() {
     }
   };
 
-  // 4. RSSI Threshold Calibration
+  // 4. Proximity Simulation for Expo Go Mode
+  const simulateProximityWalkUp = () => {
+    addLogEntry('iBeacon detectado: e2c56db5 (Major: 1, Minor: 1)', 'info');
+    setCurrentRssi(-58);
+    setTimeout(() => {
+      addLogEntry('RSSI -58 dBm >= Umbral (-65 dBm). Conectando BLE GATT...', 'info');
+      setTimeout(() => {
+        addLogEntry('Firma HMAC-SHA256 validada con éxito con ESP32.', 'success');
+        setIsLocked(false);
+        addLogEntry('Vehículo DESBLOQUEADO (Walk-Up de proximidad)', 'success');
+      }, 400);
+    }, 350);
+  };
+
+  const simulateProximityWalkAway = () => {
+    addLogEntry('iBeacon señal perdida / didExitRegion', 'warn');
+    setCurrentRssi(-95);
+    setTimeout(() => {
+      addLogEntry('Transmitiendo comando BLE LOCK (0x02)...', 'info');
+      setTimeout(() => {
+        setIsLocked(true);
+        addLogEntry('Vehículo BLOQUEADO (Walk-Away automático)', 'warn');
+      }, 400);
+    }, 350);
+  };
+
+  // 5. RSSI Threshold Calibration
   const handleChangeThreshold = async (val: number) => {
     setRssiThreshold(val);
     await CarLockNative.setRssiThreshold(val);
@@ -190,15 +218,62 @@ export default function App() {
         </View>
 
         {/* ================================================================= */}
-        {/* PERMISSION WARNING BANNER (Apple iOS Always Required)            */}
+        {/* EXPO GO PREVIEW / SIMULATION BANNER                               */}
         {/* ================================================================= */}
-        {!isAlwaysAuthorized && (
+        {!isNativeAvailable && !bannerDismissed && (
+          <View style={styles.expoGoBanner}>
+            <View style={styles.bannerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Text style={styles.bannerIcon}>📱</Text>
+                <Text style={styles.expoBannerTitle}>Modo Expo Go (Vista Previa)</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setBannerDismissed(true)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.dismissBtn}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.expoBannerText}>
+              Los controles manuales, la sensibilidad y la consola de auditoría están 100% operativos. Prueba las simulaciones de proximidad:
+            </Text>
+            <View style={styles.simulationBtnRow}>
+              <TouchableOpacity
+                style={styles.simBtnUnlock}
+                onPress={simulateProximityWalkUp}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.simBtnTextUnlock}>🚶‍♂️ Simular Walk-Up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.simBtnLock}
+                onPress={simulateProximityWalkAway}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.simBtnTextLock}>🚶‍♀️ Simular Walk-Away</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ================================================================= */}
+        {/* NATIVE iOS PERMISSION BANNER (Only on native builds when ungranted)*/}
+        {/* ================================================================= */}
+        {isNativeAvailable && !isAlwaysAuthorized && !bannerDismissed && (
           <View style={styles.permissionBanner}>
             <View style={styles.bannerHeader}>
-              <Text style={styles.bannerIcon}>⚠️</Text>
-              <Text style={styles.bannerTitle}>
-                Permiso "Siempre" Requerido en iOS
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Text style={styles.bannerIcon}>⚠️</Text>
+                <Text style={styles.bannerTitle}>
+                  Permiso "Siempre" Requerido en iOS
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setBannerDismissed(true)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.dismissBtn}>✕</Text>
+              </TouchableOpacity>
             </View>
             <Text style={styles.bannerText}>
               Para que el auto se desbloquee al acercarte y se bloquee al alejarte con la{' '}
@@ -507,6 +582,63 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  dismissBtn: {
+    color: '#8B98A5',
+    fontSize: 16,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+  },
+  expoGoBanner: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#00E5FF',
+    marginBottom: 16,
+  },
+  expoBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#00E5FF',
+  },
+  expoBannerText: {
+    fontSize: 13,
+    color: '#B0BEC5',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  simulationBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  simBtnUnlock: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
+    borderWidth: 1,
+    borderColor: '#00E676',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  simBtnLock: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 171, 0, 0.15)',
+    borderWidth: 1,
+    borderColor: '#FFAB00',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  simBtnTextUnlock: {
+    color: '#00E676',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  simBtnTextLock: {
+    color: '#FFAB00',
+    fontWeight: '700',
+    fontSize: 12,
   },
   permissionBanner: {
     backgroundColor: 'rgba(255, 171, 0, 0.12)',
