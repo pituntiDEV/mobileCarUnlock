@@ -1,0 +1,58 @@
+name: Build iOS IPA (No-Mac Cloud Build)
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Compile iOS Application on macOS Runner
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install Mobile Dependencies
+        run: |
+          cd mobile
+          npm ci
+
+      - name: Setup CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Build Unsigned IPA for Sideloading
+        run: |
+          cd ios
+          # Compile the workspace without code signing
+          xcodebuild \
+            -workspace CarUnlock.xcworkspace \
+            -scheme CarUnlock \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+          # Package into Payload directory for standard .ipa structure
+          mkdir -p Payload
+          cp -r build/Release-iphoneos/CarUnlock.app Payload/
+          zip -r CarUnlock.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarUnlock-iOS-IPA
+          path: ios/CarUnlock.ipa
+          retention-days: 14

@@ -1,0 +1,114 @@
+# ==============================================================================
+# CARUNLOCK ROOT .GITIGNORE
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# JavaScript & React Native
+# ------------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Metro Bundler & Cache
+.metro-health-check*
+.metro-cache/
+metro-cache/
+*.jsbundle
+
+# Expo & EAS Build
+.expo/
+dist/
+web-build/
+.eas/
+
+# ------------------------------------------------------------------------------
+# iOS & Xcode
+# ------------------------------------------------------------------------------
+ios/Pods/
+**/Pods/
+ios/build/
+**/build/
+ios/DerivedData/
+DerivedData/
+
+# Xcode User Data & State
+*.xcuserstate
+project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# App Packaging Artifacts
+*.ipa
+*.app
+*.dSYM.zip
+*.dSYM
+ios/Payload/
+Payload/
+
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# CocoaPods
+Podfile.lock.tmp
+
+# ------------------------------------------------------------------------------
+# ESP32 & PlatformIO Firmware
+# ------------------------------------------------------------------------------
+firmware/.pio/
+.pio/
+firmware/.pioenvs/
+firmware/.piolibdeps/
+firmware/.clang_tidy
+firmware/*.bin
+firmware/*.elf
+firmware/*.hex
+firmware/*.map
+
+# ------------------------------------------------------------------------------
+# Operating System & Cache
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# ------------------------------------------------------------------------------
+# IDEs & Code Editors
+# ------------------------------------------------------------------------------
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# VS Code (preserve extensions/settings recommendations if any)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ------------------------------------------------------------------------------
+# Secrets & Environment Files
+# ------------------------------------------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.p12
+*.mobileprovision
