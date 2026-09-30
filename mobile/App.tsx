@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -29,6 +29,8 @@ export default function App() {
   const [rssiThreshold, setRssiThreshold] = useState<number>(-65);
   const [currentRssi, setCurrentRssi] = useState<number>(-100);
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
+  const [isRadarActive, setIsRadarActive] = useState<boolean>(false);
+  const radarTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Manual Operation Loading
   const [activeAction, setActiveAction] = useState<'unlock' | 'lock' | null>(null);
@@ -171,7 +173,84 @@ export default function App() {
     }, 350);
   };
 
-  // 5. RSSI Threshold Calibration
+  // 5. Live BLE Proximity Distance & Radar Engine
+  const calculateDistance = (rssi: number): string => {
+    if (rssi <= -95) return '> 15 m';
+    if (rssi >= -40) return '< 0.3 m';
+    const measuredPower = -59;
+    const n = 2.0;
+    const dist = Math.pow(10, (measuredPower - rssi) / (10 * n));
+    return `${dist.toFixed(1)} m`;
+  };
+
+  const getSignalMeta = (rssi: number) => {
+    if (rssi >= -55) {
+      return { label: '🟢 Muy Cerca (Zona de Entrada: < 0.8m)', color: '#00E676', bars: 5 };
+    }
+    if (rssi >= -65) {
+      return { label: '🔵 Zona de Desbloqueo Walk-Up (1-2m)', color: '#00E5FF', bars: 4 };
+    }
+    if (rssi >= -75) {
+      return { label: '🟡 Aproximación Detectada (3-6m)', color: '#FFAB00', bars: 3 };
+    }
+    if (rssi >= -85) {
+      return { label: '🟠 Límite de Cobertura iBeacon (7-12m)', color: '#FF9100', bars: 2 };
+    }
+    return { label: '⚪ Fuera de Alcance / En Espera', color: '#757575', bars: 1 };
+  };
+
+  const updateRssiAndEvaluate = (newRssi: number) => {
+    setCurrentRssi(newRssi);
+    if (isMonitoring) {
+      if (newRssi >= rssiThreshold && isLocked) {
+        setIsLocked(false);
+        addLogEntry(`[Radar] RSSI ${newRssi} dBm cruzó umbral (${rssiThreshold} dBm) -> AUTO-UNLOCK`, 'success');
+      } else if (newRssi < rssiThreshold - 15 && !isLocked) {
+        setIsLocked(true);
+        addLogEntry(`[Radar] RSSI ${newRssi} dBm cayó bajo zona segura -> AUTO-LOCK`, 'warn');
+      }
+    }
+  };
+
+  const walkSteps = [
+    { rssi: -90, msg: '🚶 Iniciando caminata hacia el auto: 15 metros' },
+    { rssi: -82, msg: '📡 Señal iBeacon detectada a ~10 metros' },
+    { rssi: -74, msg: '🚶 Acercándote al vehículo (~5.5 metros)' },
+    { rssi: -66, msg: '🟡 En zona de advertencia (~2.2 metros)...' },
+    { rssi: -58, msg: '🟢 ¡UMBRAL DE APERTURA ALCANZADO! (~0.9 metros)' },
+    { rssi: -48, msg: '🔑 Junto a la manija de la puerta (~0.3 metros)' },
+    { rssi: -45, msg: '🚗 Dentro del vehículo (~0.2 metros)' },
+    { rssi: -55, msg: '🚶 Comenzando a alejarte...' },
+    { rssi: -70, msg: '🚶 Alejándote a ~4 metros' },
+    { rssi: -80, msg: '🚶 Saliendo del perímetro (~8.5 metros)' },
+    { rssi: -88, msg: '🔒 Señal débil: activación de Walk-Away Auto-Lock' },
+  ];
+
+  const toggleLiveRadar = () => {
+    if (isRadarActive) {
+      if (radarTimerRef.current) clearInterval(radarTimerRef.current);
+      setIsRadarActive(false);
+      addLogEntry('Radar continuo en vivo pausado', 'info');
+    } else {
+      setIsRadarActive(true);
+      addLogEntry('Radar continuo BLE en vivo activado (Simulando caminata)', 'info');
+      let stepIndex = 0;
+      radarTimerRef.current = setInterval(() => {
+        const step = walkSteps[stepIndex];
+        updateRssiAndEvaluate(step.rssi);
+        addLogEntry(step.msg, step.rssi >= -65 ? 'success' : step.rssi <= -82 ? 'warn' : 'info');
+        stepIndex = (stepIndex + 1) % walkSteps.length;
+      }, 1500);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (radarTimerRef.current) clearInterval(radarTimerRef.current);
+    };
+  }, []);
+
+  // 6. RSSI Threshold Calibration
   const handleChangeThreshold = async (val: number) => {
     setRssiThreshold(val);
     await CarLockNative.setRssiThreshold(val);
@@ -359,6 +438,100 @@ export default function App() {
                 {currentRssi !== -100 ? `${currentRssi} dBm` : '--'}
               </Text>
             </View>
+          </View>
+        </View>
+
+        {/* ================================================================= */}
+        {/* LIVE BLE PROXIMITY RADAR & DISTANCE METER                         */}
+        {/* ================================================================= */}
+        <View style={styles.radarCard}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleGroup}>
+              <Text style={{ fontSize: 18, marginRight: 8 }}>📡</Text>
+              <Text style={styles.cardTitle}>Radar de Proximidad BLE</Text>
+              {isRadarActive && (
+                <View style={styles.liveTag}>
+                  <Text style={styles.liveTagText}>EN VIVO</Text>
+                </View>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.radarToggleBtn,
+                isRadarActive ? styles.radarToggleBtnStop : styles.radarToggleBtnStart,
+              ]}
+              onPress={toggleLiveRadar}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.radarToggleText}>
+                {isRadarActive ? '⏸️ Pausar Radar' : '▶️ Simular Caminata'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Main Meter Row: RSSI & Distance & Bars */}
+          <View style={styles.meterContainer}>
+            <View style={styles.meterValueBlock}>
+              <Text style={styles.meterRssiNumber}>
+                {currentRssi !== -100 ? `${currentRssi}` : '--'}
+                <Text style={styles.meterUnit}> dBm</Text>
+              </Text>
+              <Text style={styles.meterDistanceText}>
+                Distancia estimada: <Text style={{ color: '#00E5FF', fontWeight: '800' }}>{calculateDistance(currentRssi)}</Text>
+              </Text>
+            </View>
+
+            {/* Dynamic Signal Bars */}
+            <View style={styles.signalBarsContainer}>
+              {[1, 2, 3, 4, 5].map((barIndex) => {
+                const meta = getSignalMeta(currentRssi);
+                const isBarActive = meta.bars >= barIndex;
+                const barHeight = 8 + barIndex * 6;
+                return (
+                  <View
+                    key={barIndex}
+                    style={[
+                      styles.signalBar,
+                      {
+                        height: barHeight,
+                        backgroundColor: isBarActive ? meta.color : '#1E2532',
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Zone Badge */}
+          <View
+            style={[
+              styles.zonePill,
+              { borderColor: getSignalMeta(currentRssi).color },
+            ]}
+          >
+            <Text style={[styles.zonePillText, { color: getSignalMeta(currentRssi).color }]}>
+              {getSignalMeta(currentRssi).label}
+            </Text>
+          </View>
+
+          {/* Stepper Buttons for Manual Live Adjustment */}
+          <View style={styles.stepperRow}>
+            <TouchableOpacity
+              style={styles.stepperBtn}
+              onPress={() => updateRssiAndEvaluate(Math.max(-100, (currentRssi === -100 ? -90 : currentRssi) - 5))}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.stepperBtnText}>➖ Alejarse (-5 dBm)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.stepperBtn, styles.stepperBtnCloser]}
+              onPress={() => updateRssiAndEvaluate(Math.min(-40, (currentRssi === -100 ? -70 : currentRssi) + 5))}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.stepperBtnTextCloser}>➕ Acercarse (+5 dBm)</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -678,6 +851,132 @@ const styles = StyleSheet.create({
     color: '#0B0E14',
     fontWeight: '700',
     fontSize: 13,
+  },
+  radarCard: {
+    backgroundColor: '#111722',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#00E5FF',
+    marginBottom: 16,
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  liveTag: {
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
+    borderColor: '#00E676',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  liveTagText: {
+    color: '#00E676',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  radarToggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  radarToggleBtnStart: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: '#00E5FF',
+  },
+  radarToggleBtnStop: {
+    backgroundColor: 'rgba(255, 23, 68, 0.15)',
+    borderColor: '#FF1744',
+  },
+  radarToggleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  meterContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 12,
+    backgroundColor: '#161E2E',
+    padding: 14,
+    borderRadius: 12,
+  },
+  meterValueBlock: {
+    flex: 1,
+  },
+  meterRssiNumber: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  meterUnit: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8B98A5',
+  },
+  meterDistanceText: {
+    fontSize: 13,
+    color: '#B0BEC5',
+    marginTop: 4,
+  },
+  signalBarsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 5,
+    paddingBottom: 4,
+  },
+  signalBar: {
+    width: 8,
+    borderRadius: 4,
+  },
+  zonePill: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    marginBottom: 12,
+  },
+  zonePillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  stepperRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  stepperBtn: {
+    flex: 1,
+    backgroundColor: '#1E2532',
+    borderWidth: 1,
+    borderColor: '#2A3344',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  stepperBtnCloser: {
+    borderColor: '#00E5FF',
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+  },
+  stepperBtnText: {
+    color: '#B0BEC5',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  stepperBtnTextCloser: {
+    color: '#00E5FF',
+    fontWeight: '700',
+    fontSize: 12,
   },
   card: {
     backgroundColor: '#151A23',
