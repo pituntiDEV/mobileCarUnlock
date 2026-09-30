@@ -1,7 +1,7 @@
 name: Build iOS IPA (No-Mac Cloud Build)
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
   push:
     branches: [ main, master ]
 
@@ -34,20 +34,19 @@ jobs:
       - name: Build Unsigned IPA for Sideloading
         run: |
           cd ios
-          # Compile the workspace without code signing
           xcodebuild \
             -workspace CarUnlock.xcworkspace \
             -scheme CarUnlock \
             -configuration Release \
             -sdk iphoneos \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build
 
-          # Package into Payload directory for standard .ipa structure
           mkdir -p Payload
-          cp -r build/Release-iphoneos/CarUnlock.app Payload/
+          cp -r build/Build/Products/Release-iphoneos/CarUnlock.app Payload/
           zip -r CarUnlock.ipa Payload
 
       - name: Upload IPA Artifact

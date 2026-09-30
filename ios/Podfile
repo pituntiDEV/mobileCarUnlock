@@ -1,11 +1,14 @@
-# Resolve react_native_pods.rb with node to allow for hoisting
+mobile_path = File.expand_path("../mobile", __dir__)
+ENV['NODE_PATH'] = "#{mobile_path}/node_modules"
+
+# Resolve react_native_pods.rb with node pointing to mobile/node_modules
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "react-native/scripts/react_native_pods.rb",
     {paths: [process.argv[1]]},
-  )', __dir__]).strip
+  )', mobile_path]).strip
 
-platform :ios, '14.0'
+platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
 target 'CarUnlock' do
@@ -13,8 +16,7 @@ target 'CarUnlock' do
 
   use_react_native!(
     :path => config[:reactNativePath],
-    # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/../mobile"
+    :app_path => mobile_path
   )
 
   post_install do |installer|
