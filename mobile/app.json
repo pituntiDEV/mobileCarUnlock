@@ -1,4 +1,14 @@
 {
-  "name": "CarUnlock",
-  "displayName": "CarLock"
+  "expo": {
+    "name": "CarLock",
+    "slug": "carlock",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0E14",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.pitunti.carlock"
+    }
+  }
 }

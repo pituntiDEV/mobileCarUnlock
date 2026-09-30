@@ -2,14 +2,17 @@
   "name": "CarUnlockMobile",
   "version": "1.0.0",
   "private": true,
+  "main": "index.js",
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "start": "react-native start",
+    "start": "expo start",
     "test": "jest",
     "lint": "eslint ."
   },
   "dependencies": {
+    "expo": "~51.0.0",
+    "expo-status-bar": "^57.0.1",
     "react": "18.2.0",
     "react-native": "0.74.1"
   },
