@@ -4,24 +4,20 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
     "start": "expo start",
-    "test": "jest",
-    "lint": "eslint ."
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
-    "expo": "~51.0.0",
-    "expo-status-bar": "^57.0.1",
-    "react": "18.2.0",
-    "react-native": "0.74.1"
+    "expo": "~57.0.26",
+    "expo-status-bar": "~2.0.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "@babel/preset-env": "^7.20.0",
-    "@babel/runtime": "^7.20.0",
-    "@types/react": "~18.2.45",
-    "@types/react-native": "~0.73.0",
-    "typescript": "^5.0.4"
+    "@types/react": "~19.2.4",
+    "babel-preset-expo": "^57.0.13",
+    "typescript": "^5.3.3"
   }
 }
