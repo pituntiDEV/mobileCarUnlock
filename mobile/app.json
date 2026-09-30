@@ -9,6 +9,12 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.pitunti.carlock"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "dfda0e1b-c8e3-4637-8841-d0dcd7234e9e"
+      }
+    },
+    "owner": "pitunti"
   }
 }
