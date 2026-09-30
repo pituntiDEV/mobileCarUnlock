@@ -11,6 +11,7 @@ import {
   Linking,
   StatusBar,
   Alert,
+  Platform,
 } from 'react-native';
 import {
   CarLockNative,
