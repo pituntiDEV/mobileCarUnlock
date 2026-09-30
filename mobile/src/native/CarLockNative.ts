@@ -40,7 +40,7 @@ export const isNativeAvailable = !!CarLockBridge;
 
 if (Platform.OS === 'ios' && !CarLockBridge) {
   console.warn(
-    '[CarLockNative] CarLockBridge is not linked. Running in Expo Go / Preview mode.'
+    '[CarLockNative] CarLockBridge no está vinculado. Se requiere compilar el binario nativo (EAS Build / IPA).'
   );
 }
 
@@ -50,41 +50,41 @@ const eventEmitter = Platform.OS === 'ios' && CarLockBridge
 
 export const CarLockNative = {
   startProximityService: async (): Promise<{ success: boolean; monitoring: boolean }> => {
-    if (!CarLockBridge) return { success: true, monitoring: true };
+    if (!CarLockBridge) {
+      throw new Error('Servicio de proximidad BLE requiere el módulo nativo iOS (EAS Build).');
+    }
     return CarLockBridge.startProximityService();
   },
 
   stopProximityService: async (): Promise<{ success: boolean; monitoring: boolean }> => {
-    if (!CarLockBridge) return { success: true, monitoring: false };
+    if (!CarLockBridge) return { success: false, monitoring: false };
     return CarLockBridge.stopProximityService();
   },
 
   manualTrigger: async (action: 'lock' | 'unlock'): Promise<{ success: boolean; action: string; rssi?: number }> => {
     if (!CarLockBridge) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({ success: true, action, rssi: -60 });
-        }, 800);
-      });
+      throw new Error(
+        'Módulo Bluetooth no vinculado. Debes instalar el build nativo de producción (EAS Build) para comunicarte con el ESP32 real.'
+      );
     }
     return CarLockBridge.manualTrigger(action);
   },
 
   setRssiThreshold: async (threshold: number): Promise<{ success: boolean; threshold: number }> => {
-    if (!CarLockBridge) return { success: true, threshold };
+    if (!CarLockBridge) return { success: false, threshold };
     return CarLockBridge.setRssiThreshold(threshold);
   },
 
   getProximitySettings: async (): Promise<ProximitySettings> => {
     if (!CarLockBridge) {
       return {
-        isMonitoring: true,
+        isMonitoring: false,
         rssiThreshold: -65,
         beaconUUID: 'e2c56db5-dffb-48d2-b060-d0f5a71096e0',
         major: 1,
         minor: 1,
-        authorizationStatus: 'authorizedAlways',
-        bluetoothState: 'poweredOn',
+        authorizationStatus: 'unknown',
+        bluetoothState: 'unknown',
         isLocked: true,
       };
     }
@@ -92,17 +92,17 @@ export const CarLockNative = {
   },
 
   checkPermissions: async (): Promise<{ locationAlways: boolean; bluetoothReady: boolean }> => {
-    if (!CarLockBridge) return { locationAlways: false, bluetoothReady: true };
+    if (!CarLockBridge) return { locationAlways: false, bluetoothReady: false };
     return CarLockBridge.checkPermissions();
   },
 
   setSecretKey: async (key: string): Promise<{ success: boolean }> => {
-    if (!CarLockBridge) return { success: true };
+    if (!CarLockBridge) return { success: false };
     return CarLockBridge.setSecretKey(key);
   },
 
   getSecretKey: async (): Promise<{ hasKey: boolean; maskedKey: string }> => {
-    if (!CarLockBridge) return { hasKey: true, maskedKey: 'c9a7....cdef' };
+    if (!CarLockBridge) return { hasKey: false, maskedKey: 'No disponible' };
     return CarLockBridge.getSecretKey();
   },
 

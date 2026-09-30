@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -22,15 +22,12 @@ import {
 
 export default function App() {
   // Service State
-  const [isMonitoring, setIsMonitoring] = useState<boolean>(true);
+  const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(true);
   const [authorizationStatus, setAuthorizationStatus] = useState<string>('unknown');
   const [bluetoothState, setBluetoothState] = useState<string>('unknown');
   const [rssiThreshold, setRssiThreshold] = useState<number>(-65);
   const [currentRssi, setCurrentRssi] = useState<number>(-100);
-  const [bannerDismissed, setBannerDismissed] = useState<boolean>(false);
-  const [isRadarActive, setIsRadarActive] = useState<boolean>(false);
-  const radarTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Manual Operation Loading
   const [activeAction, setActiveAction] = useState<'unlock' | 'lock' | null>(null);
@@ -73,7 +70,7 @@ export default function App() {
       );
     });
 
-    // Listen to RSSI Updates
+    // Listen to Real RSSI Updates from BLE Bridge
     const subRssi = CarLockNative.onRssiUpdate((data: { rssi: number }) => {
       setCurrentRssi(data.rssi);
     });
@@ -87,14 +84,25 @@ export default function App() {
   }, []);
 
   const loadInitialSettings = async () => {
-    const settings = await CarLockNative.getProximitySettings();
-    setIsMonitoring(settings.isMonitoring);
-    setRssiThreshold(settings.rssiThreshold);
-    setAuthorizationStatus(settings.authorizationStatus);
-    setBluetoothState(settings.bluetoothState);
-    setIsLocked(settings.isLocked);
+    try {
+      const settings = await CarLockNative.getProximitySettings();
+      setIsMonitoring(settings.isMonitoring);
+      setRssiThreshold(settings.rssiThreshold);
+      setAuthorizationStatus(settings.authorizationStatus);
+      setBluetoothState(settings.bluetoothState);
+      setIsLocked(settings.isLocked);
 
-    addLogEntry('Módulo CarLock iniciado. Listo para control de acceso vehicular.', 'info');
+      if (isNativeAvailable) {
+        addLogEntry('Módulo nativo CarLock conectado al hardware de iOS.', 'success');
+      } else {
+        addLogEntry(
+          'Ejecutando en entorno sin puente nativo. Para conectar físicamente con el ESP32 instala el build con EAS.',
+          'warn'
+        );
+      }
+    } catch (err: any) {
+      addLogEntry(`Error cargando ajustes: ${err.message}`, 'error');
+    }
   };
 
   const addLogEntry = (
@@ -104,159 +112,58 @@ export default function App() {
   ) => {
     setEvents((prev) => [
       { id: Math.random().toString(), timestamp, message, level },
-      ...prev.slice(0, 49), // Retain last 50 events
+      ...prev.slice(0, 49),
     ]);
   };
 
   // 2. Proximity Hands-Free Toggle
   const handleToggleMonitoring = async (enabled: boolean) => {
-    setIsMonitoring(enabled);
-    if (enabled) {
-      const res = await CarLockNative.startProximityService();
-      if (res.success) {
+    try {
+      if (enabled) {
+        const res = await CarLockNative.startProximityService();
+        setIsMonitoring(res.monitoring);
         addLogEntry('Servicio de proximidad activo (Walk-Up / Walk-Away)', 'success');
-      }
-    } else {
-      const res = await CarLockNative.stopProximityService();
-      if (res.success) {
+      } else {
+        const res = await CarLockNative.stopProximityService();
+        setIsMonitoring(res.monitoring);
         addLogEntry('Servicio de proximidad pausado', 'info');
       }
+    } catch (err: any) {
+      addLogEntry(`Fallo al alternar servicio: ${err.message}`, 'error');
+      Alert.alert('Requisito Nativo', err.message);
     }
   };
 
-  // 3. Manual On-Demand Trigger
+  // 3. Manual On-Demand Trigger to ESP32
   const handleManualAction = async (action: 'unlock' | 'lock') => {
     if (activeAction) return;
     setActiveAction(action);
-    addLogEntry(`Enviando comando manual: ${action.toUpperCase()}...`, 'info');
+    addLogEntry(`Enviando comando BLE: ${action.toUpperCase()} a ESP32...`, 'info');
 
     try {
       const result = await CarLockNative.manualTrigger(action);
       if (result.success) {
         setIsLocked(action === 'lock');
         addLogEntry(
-          `Comando ${action.toUpperCase()} ejecutado exitosamente con ESP32`,
+          `Comando ${action.toUpperCase()} verificado con ESP32 (RSSI: ${result.rssi || '--'} dBm)`,
           'success'
         );
       }
     } catch (err: any) {
       addLogEntry(`Fallo al ejecutar ${action}: ${err.message || 'Error BLE'}`, 'error');
-      Alert.alert('Fallo de Conexión', err.message || 'No se pudo conectar con el ESP32');
+      Alert.alert('Fallo de Conexión BLE', err.message || 'No se pudo comunicar con el ESP32.');
     } finally {
       setActiveAction(null);
     }
   };
 
-  // 4. Proximity Simulation for Expo Go Mode
-  const simulateProximityWalkUp = () => {
-    addLogEntry('iBeacon detectado: e2c56db5 (Major: 1, Minor: 1)', 'info');
-    setCurrentRssi(-58);
-    setTimeout(() => {
-      addLogEntry('RSSI -58 dBm >= Umbral (-65 dBm). Conectando BLE GATT...', 'info');
-      setTimeout(() => {
-        addLogEntry('Firma HMAC-SHA256 validada con éxito con ESP32.', 'success');
-        setIsLocked(false);
-        addLogEntry('Vehículo DESBLOQUEADO (Walk-Up de proximidad)', 'success');
-      }, 400);
-    }, 350);
-  };
-
-  const simulateProximityWalkAway = () => {
-    addLogEntry('iBeacon señal perdida / didExitRegion', 'warn');
-    setCurrentRssi(-95);
-    setTimeout(() => {
-      addLogEntry('Transmitiendo comando BLE LOCK (0x02)...', 'info');
-      setTimeout(() => {
-        setIsLocked(true);
-        addLogEntry('Vehículo BLOQUEADO (Walk-Away automático)', 'warn');
-      }, 400);
-    }, 350);
-  };
-
-  // 5. Live BLE Proximity Distance & Radar Engine
-  const calculateDistance = (rssi: number): string => {
-    if (rssi <= -95) return '> 15 m';
-    if (rssi >= -40) return '< 0.3 m';
-    const measuredPower = -59;
-    const n = 2.0;
-    const dist = Math.pow(10, (measuredPower - rssi) / (10 * n));
-    return `${dist.toFixed(1)} m`;
-  };
-
-  const getSignalMeta = (rssi: number) => {
-    if (rssi >= -55) {
-      return { label: '🟢 Muy Cerca (Zona de Entrada: < 0.8m)', color: '#00E676', bars: 5 };
-    }
-    if (rssi >= -65) {
-      return { label: '🔵 Zona de Desbloqueo Walk-Up (1-2m)', color: '#00E5FF', bars: 4 };
-    }
-    if (rssi >= -75) {
-      return { label: '🟡 Aproximación Detectada (3-6m)', color: '#FFAB00', bars: 3 };
-    }
-    if (rssi >= -85) {
-      return { label: '🟠 Límite de Cobertura iBeacon (7-12m)', color: '#FF9100', bars: 2 };
-    }
-    return { label: '⚪ Fuera de Alcance / En Espera', color: '#757575', bars: 1 };
-  };
-
-  const updateRssiAndEvaluate = (newRssi: number) => {
-    setCurrentRssi(newRssi);
-    if (isMonitoring) {
-      if (newRssi >= rssiThreshold && isLocked) {
-        setIsLocked(false);
-        addLogEntry(`[Radar] RSSI ${newRssi} dBm cruzó umbral (${rssiThreshold} dBm) -> AUTO-UNLOCK`, 'success');
-      } else if (newRssi < rssiThreshold - 15 && !isLocked) {
-        setIsLocked(true);
-        addLogEntry(`[Radar] RSSI ${newRssi} dBm cayó bajo zona segura -> AUTO-LOCK`, 'warn');
-      }
-    }
-  };
-
-  const walkSteps = [
-    { rssi: -90, msg: '🚶 Iniciando caminata hacia el auto: 15 metros' },
-    { rssi: -82, msg: '📡 Señal iBeacon detectada a ~10 metros' },
-    { rssi: -74, msg: '🚶 Acercándote al vehículo (~5.5 metros)' },
-    { rssi: -66, msg: '🟡 En zona de advertencia (~2.2 metros)...' },
-    { rssi: -58, msg: '🟢 ¡UMBRAL DE APERTURA ALCANZADO! (~0.9 metros)' },
-    { rssi: -48, msg: '🔑 Junto a la manija de la puerta (~0.3 metros)' },
-    { rssi: -45, msg: '🚗 Dentro del vehículo (~0.2 metros)' },
-    { rssi: -55, msg: '🚶 Comenzando a alejarte...' },
-    { rssi: -70, msg: '🚶 Alejándote a ~4 metros' },
-    { rssi: -80, msg: '🚶 Saliendo del perímetro (~8.5 metros)' },
-    { rssi: -88, msg: '🔒 Señal débil: activación de Walk-Away Auto-Lock' },
-  ];
-
-  const toggleLiveRadar = () => {
-    if (isRadarActive) {
-      if (radarTimerRef.current) clearInterval(radarTimerRef.current);
-      setIsRadarActive(false);
-      addLogEntry('Radar continuo en vivo pausado', 'info');
-    } else {
-      setIsRadarActive(true);
-      addLogEntry('Radar continuo BLE en vivo activado (Simulando caminata)', 'info');
-      let stepIndex = 0;
-      radarTimerRef.current = setInterval(() => {
-        const step = walkSteps[stepIndex];
-        updateRssiAndEvaluate(step.rssi);
-        addLogEntry(step.msg, step.rssi >= -65 ? 'success' : step.rssi <= -82 ? 'warn' : 'info');
-        stepIndex = (stepIndex + 1) % walkSteps.length;
-      }, 1500);
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (radarTimerRef.current) clearInterval(radarTimerRef.current);
-    };
-  }, []);
-
-  // 6. RSSI Threshold Calibration
+  // 4. RSSI Threshold Calibration
   const handleChangeThreshold = async (val: number) => {
     setRssiThreshold(val);
     await CarLockNative.setRssiThreshold(val);
+    addLogEntry(`Umbral de proximidad ajustado a ${val} dBm`, 'info');
   };
 
-  // Format Helper
   const formatTime = (ts: number) => {
     const d = new Date(ts);
     return d.toTimeString().split(' ')[0];
@@ -269,9 +176,7 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#0B0E14" />
       <ScrollView contentContainerStyle={styles.container} bounces={false}>
 
-        {/* ================================================================= */}
-        {/* HEADER & VEHICLE LOCK STATUS BADGE                                */}
-        {/* ================================================================= */}
+        {/* HEADER & VEHICLE STATUS BADGE */}
         <View style={styles.header}>
           <View>
             <Text style={styles.brandTitle}>CARLOCK PRO</Text>
@@ -296,68 +201,29 @@ export default function App() {
           </View>
         </View>
 
-        {/* ================================================================= */}
-        {/* EXPO GO PREVIEW / SIMULATION BANNER                               */}
-        {/* ================================================================= */}
-        {!isNativeAvailable && !bannerDismissed && (
-          <View style={styles.expoGoBanner}>
-            <View style={styles.bannerHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Text style={styles.bannerIcon}>📱</Text>
-                <Text style={styles.expoBannerTitle}>Modo Expo Go (Vista Previa)</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setBannerDismissed(true)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={styles.dismissBtn}>✕</Text>
-              </TouchableOpacity>
+        {/* NATIVE BUILD STATUS NOTICE IF RUNNING OUTSIDE BARE NATIVE */}
+        {!isNativeAvailable && (
+          <View style={styles.nativeNoticeCard}>
+            <View style={styles.nativeNoticeHeader}>
+              <Text style={styles.noticeIcon}>⚡</Text>
+              <Text style={styles.noticeTitle}>Modo Producción Activado</Text>
             </View>
-            <Text style={styles.expoBannerText}>
-              Los controles manuales, la sensibilidad y la consola de auditoría están 100% operativos. Prueba las simulaciones de proximidad:
+            <Text style={styles.noticeBody}>
+              Se han removido todas las simulaciones. El ESP32 en COM5 ya está flasheado y emitiendo iBeacon + GATT. Para conectar físicamente tu iPhone con el ESP32, corre el build nativo:
             </Text>
-            <View style={styles.simulationBtnRow}>
-              <TouchableOpacity
-                style={styles.simBtnUnlock}
-                onPress={simulateProximityWalkUp}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.simBtnTextUnlock}>🚶‍♂️ Simular Walk-Up</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.simBtnLock}
-                onPress={simulateProximityWalkAway}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.simBtnTextLock}>🚶‍♀️ Simular Walk-Away</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.commandCode}>npx eas build -p ios --profile preview</Text>
           </View>
         )}
 
-        {/* ================================================================= */}
-        {/* NATIVE iOS PERMISSION BANNER (Only on native builds when ungranted)*/}
-        {/* ================================================================= */}
-        {isNativeAvailable && !isAlwaysAuthorized && !bannerDismissed && (
+        {/* NATIVE iOS ALWAYS AUTHORIZATION WARNING (If running native without permissions) */}
+        {isNativeAvailable && !isAlwaysAuthorized && (
           <View style={styles.permissionBanner}>
             <View style={styles.bannerHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Text style={styles.bannerIcon}>⚠️</Text>
-                <Text style={styles.bannerTitle}>
-                  Permiso "Siempre" Requerido en iOS
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setBannerDismissed(true)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={styles.dismissBtn}>✕</Text>
-              </TouchableOpacity>
+              <Text style={styles.bannerIcon}>⚠️</Text>
+              <Text style={styles.bannerTitle}>Permiso "Siempre" Requerido en iOS</Text>
             </View>
             <Text style={styles.bannerText}>
-              Para que el auto se desbloquee al acercarte y se bloquee al alejarte con la{' '}
-              <Text style={{ fontWeight: '700', color: '#FFF' }}>pantalla apagada</Text>
-              , iOS exige cambiar el permiso de ubicación a "Permitir siempre".
+              Para que el auto se desbloquee al acercarte con la pantalla apagada, iOS exige cambiar el permiso de ubicación a "Permitir siempre".
             </Text>
             <TouchableOpacity
               style={styles.bannerButton}
@@ -369,9 +235,7 @@ export default function App() {
           </View>
         )}
 
-        {/* ================================================================= */}
-        {/* HANDS-FREE AUTOMATION SWITCH CARD                                 */}
-        {/* ================================================================= */}
+        {/* HANDS-FREE AUTOMATION SWITCH CARD */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleGroup}>
@@ -441,103 +305,7 @@ export default function App() {
           </View>
         </View>
 
-        {/* ================================================================= */}
-        {/* LIVE BLE PROXIMITY RADAR & DISTANCE METER                         */}
-        {/* ================================================================= */}
-        <View style={styles.radarCard}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardTitleGroup}>
-              <Text style={{ fontSize: 18, marginRight: 8 }}>📡</Text>
-              <Text style={styles.cardTitle}>Radar de Proximidad BLE</Text>
-              {isRadarActive && (
-                <View style={styles.liveTag}>
-                  <Text style={styles.liveTagText}>EN VIVO</Text>
-                </View>
-              )}
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.radarToggleBtn,
-                isRadarActive ? styles.radarToggleBtnStop : styles.radarToggleBtnStart,
-              ]}
-              onPress={toggleLiveRadar}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.radarToggleText}>
-                {isRadarActive ? '⏸️ Pausar Radar' : '▶️ Simular Caminata'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Main Meter Row: RSSI & Distance & Bars */}
-          <View style={styles.meterContainer}>
-            <View style={styles.meterValueBlock}>
-              <Text style={styles.meterRssiNumber}>
-                {currentRssi !== -100 ? `${currentRssi}` : '--'}
-                <Text style={styles.meterUnit}> dBm</Text>
-              </Text>
-              <Text style={styles.meterDistanceText}>
-                Distancia estimada: <Text style={{ color: '#00E5FF', fontWeight: '800' }}>{calculateDistance(currentRssi)}</Text>
-              </Text>
-            </View>
-
-            {/* Dynamic Signal Bars */}
-            <View style={styles.signalBarsContainer}>
-              {[1, 2, 3, 4, 5].map((barIndex) => {
-                const meta = getSignalMeta(currentRssi);
-                const isBarActive = meta.bars >= barIndex;
-                const barHeight = 8 + barIndex * 6;
-                return (
-                  <View
-                    key={barIndex}
-                    style={[
-                      styles.signalBar,
-                      {
-                        height: barHeight,
-                        backgroundColor: isBarActive ? meta.color : '#1E2532',
-                      },
-                    ]}
-                  />
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Zone Badge */}
-          <View
-            style={[
-              styles.zonePill,
-              { borderColor: getSignalMeta(currentRssi).color },
-            ]}
-          >
-            <Text style={[styles.zonePillText, { color: getSignalMeta(currentRssi).color }]}>
-              {getSignalMeta(currentRssi).label}
-            </Text>
-          </View>
-
-          {/* Stepper Buttons for Manual Live Adjustment */}
-          <View style={styles.stepperRow}>
-            <TouchableOpacity
-              style={styles.stepperBtn}
-              onPress={() => updateRssiAndEvaluate(Math.max(-100, (currentRssi === -100 ? -90 : currentRssi) - 5))}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.stepperBtnText}>➖ Alejarse (-5 dBm)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.stepperBtn, styles.stepperBtnCloser]}
-              onPress={() => updateRssiAndEvaluate(Math.min(-40, (currentRssi === -100 ? -70 : currentRssi) + 5))}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.stepperBtnTextCloser}>➕ Acercarse (+5 dBm)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ================================================================= */}
-        {/* MANUAL DUAL CONTROLS (DESBLOQUEAR / BLOQUEAR)                     */}
-        {/* ================================================================= */}
+        {/* MANUAL DUAL CONTROLS (DESBLOQUEAR / BLOQUEAR) */}
         <View style={styles.manualControlsRow}>
           <TouchableOpacity
             style={[
@@ -582,9 +350,7 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* ================================================================= */}
-        {/* PROXIMITY CALIBRATION (RSSI SLIDER & PRESETS)                     */}
-        {/* ================================================================= */}
+        {/* PROXIMITY CALIBRATION (RSSI PRESETS) */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Sensibilidad de Proximidad</Text>
@@ -597,7 +363,6 @@ export default function App() {
             Filtro de potencia de señal para apertura. Valores más altos (cerca de -50 dBm) exigen estar más pegado al auto.
           </Text>
 
-          {/* Preset Buttons */}
           <View style={styles.presetRow}>
             {[
               { label: 'Cerca (-55 dBm)', val: -55 },
@@ -615,8 +380,8 @@ export default function App() {
                 >
                   <Text
                     style={[
-                      styles.presetPillText,
-                      active && styles.presetPillTextActive,
+                      styles.presetText,
+                      active && styles.presetTextActive,
                     ]}
                   >
                     {p.label}
@@ -625,53 +390,23 @@ export default function App() {
               );
             })}
           </View>
-
-          {/* Steppers for precise adjustment */}
-          <View style={styles.stepperRow}>
-            <TouchableOpacity
-              style={styles.stepperBtn}
-              onPress={() => handleChangeThreshold(Math.max(-85, rssiThreshold - 1))}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.stepperText}>- 1 dBm (Mayor alcance)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.stepperBtn}
-              onPress={() => handleChangeThreshold(Math.min(-50, rssiThreshold + 1))}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.stepperText}>+ 1 dBm (Más cerca)</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
-        {/* ================================================================= */}
-        {/* REAL-TIME EVENT FEED & DIAGNOSTICS                                */}
-        {/* ================================================================= */}
+        {/* REAL-TIME DIAGNOSTIC AUDIT LOG */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Registro de Eventos en Vivo</Text>
-            {events.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setEvents([])}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.clearLogsText}>Limpiar</Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.cardTitle}>Registro de Diagnóstico en Vivo</Text>
+            <TouchableOpacity onPress={() => setEvents([])}>
+              <Text style={styles.clearLogsText}>Limpiar</Text>
+            </TouchableOpacity>
           </View>
 
           {events.length === 0 ? (
-            <View style={styles.emptyFeed}>
-              <Text style={styles.emptyFeedText}>
-                Esperando eventos de proximidad o comandos...
-              </Text>
-            </View>
+            <Text style={styles.emptyLogsText}>Sin eventos recientes</Text>
           ) : (
-            <View style={styles.eventList}>
+            <View style={styles.logList}>
               {events.map((ev) => {
-                let badgeColor = '#00E5FF';
+                let badgeColor = '#52606D';
                 if (ev.level === 'success') badgeColor = '#00E676';
                 if (ev.level === 'warn') badgeColor = '#FFAB00';
                 if (ev.level === 'error') badgeColor = '#FF1744';
@@ -756,13 +491,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  dismissBtn: {
-    color: '#8B98A5',
-    fontSize: 16,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-  },
-  expoGoBanner: {
+  nativeNoticeCard: {
     backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderRadius: 14,
     padding: 14,
@@ -770,48 +499,34 @@ const styles = StyleSheet.create({
     borderColor: '#00E5FF',
     marginBottom: 16,
   },
-  expoBannerTitle: {
+  nativeNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  noticeIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  noticeTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#00E5FF',
   },
-  expoBannerText: {
+  noticeBody: {
     fontSize: 13,
     color: '#B0BEC5',
     lineHeight: 18,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  simulationBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  simBtnUnlock: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    borderWidth: 1,
-    borderColor: '#00E676',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  simBtnLock: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 171, 0, 0.15)',
-    borderWidth: 1,
-    borderColor: '#FFAB00',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  simBtnTextUnlock: {
+  commandCode: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
     color: '#00E676',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  simBtnTextLock: {
-    color: '#FFAB00',
-    fontWeight: '700',
-    fontSize: 12,
+    backgroundColor: '#0B0E14',
+    padding: 8,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   permissionBanner: {
     backgroundColor: 'rgba(255, 171, 0, 0.12)',
@@ -851,132 +566,6 @@ const styles = StyleSheet.create({
     color: '#0B0E14',
     fontWeight: '700',
     fontSize: 13,
-  },
-  radarCard: {
-    backgroundColor: '#111722',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#00E5FF',
-    marginBottom: 16,
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  liveTag: {
-    backgroundColor: 'rgba(0, 230, 118, 0.2)',
-    borderColor: '#00E676',
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginLeft: 6,
-  },
-  liveTagText: {
-    color: '#00E676',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  radarToggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  radarToggleBtnStart: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderColor: '#00E5FF',
-  },
-  radarToggleBtnStop: {
-    backgroundColor: 'rgba(255, 23, 68, 0.15)',
-    borderColor: '#FF1744',
-  },
-  radarToggleText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  meterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 12,
-    backgroundColor: '#161E2E',
-    padding: 14,
-    borderRadius: 12,
-  },
-  meterValueBlock: {
-    flex: 1,
-  },
-  meterRssiNumber: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  meterUnit: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8B98A5',
-  },
-  meterDistanceText: {
-    fontSize: 13,
-    color: '#B0BEC5',
-    marginTop: 4,
-  },
-  signalBarsContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 5,
-    paddingBottom: 4,
-  },
-  signalBar: {
-    width: 8,
-    borderRadius: 4,
-  },
-  zonePill: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    marginBottom: 12,
-  },
-  zonePillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  stepperBtn: {
-    flex: 1,
-    backgroundColor: '#1E2532',
-    borderWidth: 1,
-    borderColor: '#2A3344',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  stepperBtnCloser: {
-    borderColor: '#00E5FF',
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
-  },
-  stepperBtnText: {
-    color: '#B0BEC5',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  stepperBtnTextCloser: {
-    color: '#00E5FF',
-    fontWeight: '700',
-    fontSize: 12,
   },
   card: {
     backgroundColor: '#151A23',
@@ -1091,95 +680,77 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   rssiBadge: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    backgroundColor: '#1E2532',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#00E5FF',
   },
   rssiBadgeText: {
-    fontSize: 11,
-    fontFamily: 'Courier',
-    fontWeight: '700',
     color: '#00E5FF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   presetRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 12,
   },
   presetPill: {
-    backgroundColor: '#1E2532',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
+    backgroundColor: '#1E2532',
     borderWidth: 1,
     borderColor: '#2A3344',
   },
   presetPillActive: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
     borderColor: '#00E5FF',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
   },
-  presetPillText: {
-    fontSize: 12,
+  presetText: {
     color: '#8B98A5',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  presetPillTextActive: {
+  presetTextActive: {
     color: '#00E5FF',
     fontWeight: '700',
   },
-  stepperRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  stepperBtn: {
-    flex: 1,
-    backgroundColor: '#1E2532',
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2A3344',
-  },
-  stepperText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-  },
   clearLogsText: {
+    color: '#8B98A5',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyLogsText: {
     color: '#52606D',
-  },
-  emptyFeed: {
-    paddingVertical: 24,
-    alignItems: 'center',
-  },
-  emptyFeedText: {
     fontSize: 13,
-    color: '#52606D',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 12,
   },
-  eventList: {
-    marginTop: 4,
+  logList: {
+    gap: 8,
   },
   eventItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E2532',
+    backgroundColor: '#0B0E14',
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#2A3344',
   },
   eventTimeCol: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 10,
-    width: 75,
+    marginRight: 8,
   },
   eventTimeText: {
-    fontSize: 11,
     color: '#52606D',
-    fontFamily: 'Courier',
-    marginRight: 6,
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 4,
   },
   eventDot: {
     width: 6,
@@ -1188,8 +759,8 @@ const styles = StyleSheet.create({
   },
   eventMessageText: {
     flex: 1,
-    fontSize: 12,
     color: '#ECEFF1',
+    fontSize: 12,
     lineHeight: 16,
   },
 });
