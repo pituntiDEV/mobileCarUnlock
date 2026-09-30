@@ -28,12 +28,12 @@ jobs:
 
       - name: Setup CocoaPods
         run: |
-          cd ios
+          cd mobile/ios
           pod install --repo-update
 
       - name: Build Unsigned IPA for Sideloading
         run: |
-          cd ios
+          cd mobile/ios
           xcodebuild \
             -workspace CarUnlock.xcworkspace \
             -scheme CarUnlock \
@@ -53,5 +53,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CarUnlock-iOS-IPA
-          path: ios/CarUnlock.ipa
+          path: mobile/ios/CarUnlock.ipa
           retention-days: 14

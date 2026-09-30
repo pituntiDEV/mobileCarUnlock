@@ -12,7 +12,6 @@ platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
 target 'CarUnlock' do
-  # Pre-compute config from mobile directory where package.json lives
   cli_resolve_script = "try {console.log(require('@react-native-community/cli').bin);} catch (e) {console.log(require('react-native/cli').bin);}"
   cli_bin = Pod::Executable.execute_command("node", ["-e", cli_resolve_script], true).strip
 
@@ -29,14 +28,14 @@ target 'CarUnlock' do
   config = use_native_modules!(rn_config)
 
   use_react_native!(
-    :path => config[:reactNativePath],
+    :path => "#{mobile_path}/node_modules/react-native",
     :app_path => mobile_path
   )
 
   post_install do |installer|
     react_native_post_install(
       installer,
-      config[:reactNativePath],
+      "#{mobile_path}/node_modules/react-native",
       :mac_catalyst_enabled => false
     )
   end
